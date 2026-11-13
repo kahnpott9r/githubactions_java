@@ -1,0 +1,167 @@
+name: CI
+
+# Khi nào pipeline chạy?
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      node_ref:
+        description: "Branch / tag / SHA của repo githubactions (Node) để test tích hợp"
+        required: false
+        default: main
+  # Repo githubactions (Node) bắn event này sau khi build xanh trên main
+  repository_dispatch:
+    types: [node-app-updated]
+
+# Mặc định chỉ được đọc code.
+permissions:
+  contents: read
+
+# Push liên tục -> huỷ run cũ của cùng branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "21"
+  NODE_REPO: kahnpott9r/githubactions
+  # Ref của repo Node: lấy từ dispatch payload -> input thủ công -> main
+  NODE_REF: ${{ github.event.client_payload.sha || github.event.inputs.node_ref || 'main' }}
+  NODE_PORT: "3000"
+
+jobs:
+  # ---------------------------------------------------------------
+  # Job 1: unit test (không cần app Node)
+  # ---------------------------------------------------------------
+  unit-test:
+    name: Unit test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Build & unit test
+        run: ./mvnw -B verify
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: target/surefire-reports
+          retention-days: 7
+
+  # ---------------------------------------------------------------
+  # Job 2: integration test với app Node THẬT từ repo githubactions
+  # ---------------------------------------------------------------
+  integration-test:
+    name: Integration test (Node @ ${{ github.event.client_payload.sha || github.event.inputs.node_ref || 'main' }})
+    runs-on: ubuntu-latest
+    needs: unit-test
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout Java repo
+        uses: actions/checkout@v4
+
+      - name: Checkout Node repo (githubactions)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.NODE_REPO }}
+          ref: ${{ env.NODE_REF }}
+          path: node-app
+          # Repo public: github.token là đủ. Repo private: tạo secret NODE_REPO_TOKEN
+          # (fine-grained PAT, quyền Contents: Read-only trên repo githubactions).
+          token: ${{ secrets.NODE_REPO_TOKEN || github.token }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: node-app/package-lock.json
+
+      - name: Start Node app
+        working-directory: node-app
+        run: |
+          npm ci --omit=dev
+          nohup npm start > ../node-app.log 2>&1 &
+        env:
+          PORT: ${{ env.NODE_PORT }}
+
+      - name: Wait for Node app to be healthy
+        run: |
+          curl --silent --show-error --fail \
+               --retry 30 --retry-delay 1 --retry-connrefused \
+               "http://localhost:${NODE_PORT}/api/health"
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Run integration tests
+        run: ./mvnw -B -Pintegration verify -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false
+        env:
+          NODE_API_BASE_URL: http://localhost:${{ env.NODE_PORT }}
+
+      - name: Show Node app log
+        if: failure()
+        run: cat node-app.log
+
+      - name: Upload integration reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-reports
+          path: |
+            target/failsafe-reports
+            node-app.log
+          retention-days: 7
+
+  # ---------------------------------------------------------------
+  # Job 3: chỉ chạy khi cả 2 loại test xanh -> đóng gói jar + Docker image
+  # ---------------------------------------------------------------
+  build:
+    name: Build & package
+    runs-on: ubuntu-latest
+    needs: integration-test
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Package jar
+        run: ./mvnw -B -DskipTests package
+
+      - name: Build Docker image
+        run: docker build -t todo-report:${{ github.sha }} .
+
+      - name: Upload jar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: todo-report-${{ github.sha }}
+          path: target/todo-report.jar
+          retention-days: 7

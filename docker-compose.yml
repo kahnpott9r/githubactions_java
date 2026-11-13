@@ -1,0 +1,26 @@
+# Chạy cả 2 app cùng lúc ở local.
+# Yêu cầu: repo githubactions nằm cạnh repo này (../githubactions).
+#
+#   docker compose up --build
+#   -> Node app : http://localhost:3000
+#   -> Java app : http://localhost:8080/api/report
+services:
+  node-app:
+    build: ../githubactions
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  java-app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      NODE_API_BASE_URL: http://node-app:3000
+    depends_on:
+      node-app:
+        condition: service_healthy
