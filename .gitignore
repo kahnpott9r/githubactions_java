@@ -17,3 +17,6 @@ Thumbs.db
 # Logs & env
 *.log
 .env
+
+# kubeconfig do kind tạo ra
+k8s/.kube/

@@ -33,39 +33,61 @@ NODE_API_BASE_URL=http://localhost:3000 ./mvnw spring-boot:run
 curl http://localhost:8080/api/report
 ```
 
-### Chạy toàn bộ bằng Docker Compose
+### Chạy 2 app bằng Docker Compose
 
 ```bash
 docker compose up --build -d
 ```
 
-| Service | URL trên host | Ghi chú |
-|---|---|---|
-| `node-app` | http://localhost:3000 | Build từ `../githubactions` |
-| `java-app` | http://localhost:8080/api/report | |
-| `ministack` | http://localhost:4567 | AWS emulator (S3, SQS, DynamoDB, ...). Health: `/_ministack/health` |
-| `stackport` | **http://localhost:8090** | **UI web** để xem tài nguyên AWS trên MiniStack |
-| `aws-init` | – | Chạy một lần rồi thoát, tạo tài nguyên trên MiniStack |
-
-`aws-init` chạy [infra/aws/init.sh](infra/aws/init.sh) để tạo các tài nguyên sau. Script idempotent, chạy lại nhiều lần không lỗi:
-
-| Loại | Tên |
+| Service | URL trên host |
 |---|---|
-| S3 bucket | `todo-reports` |
-| SQS queue | `todo-events` |
-| DynamoDB table | `todo-report-history` (khóa `id`) |
+| `node-app` | http://localhost:3000 (build từ `../githubactions`) |
+| `java-app` | http://localhost:8080/api/report |
 
-Có 2 cách xem tài nguyên:
-- **Bằng UI:** mở http://localhost:8090 (StackPort).
-- **Bằng CLI** (credentials giả là `test` / `test`, region `us-east-1`):
-  ```bash
-  export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1
-  aws --endpoint-url http://localhost:4567 s3 ls
-  ```
+## Kubernetes local: kind + ArgoCD ([k8s/](k8s/))
 
-Chỉ chạy phần AWS: `docker compose up -d ministack aws-init stackport`
+Mọi thứ chạy bằng Docker Compose, **không cần cài kind, kubectl hay helm lên máy**. Container `kind` dùng docker socket của máy nên các node kind chạy ngay trên Docker của host.
 
-**Cấu hình:** copy `.env.example` thành `.env` để đổi port hoặc image. `../docker-compose.yml` ở thư mục cha dùng port 4566 (ministack) và 8089 (stackport), nên stack này mặc định dùng **4567 / 8090** để 2 stack chạy song song được.
+```bash
+docker compose -f k8s/docker-compose.yml up --build            # tạo cluster + cài ArgoCD + deploy 2 app
+docker compose -f k8s/docker-compose.yml run --rm kind status  # xem trạng thái
+docker compose -f k8s/docker-compose.yml run --rm kind kubectl get pods -A
+docker compose -f k8s/docker-compose.yml run --rm kind down    # xoá cluster
+```
+
+| Thành phần | URL |
+|---|---|
+| ArgoCD UI | https://localhost:8443 (user `admin`, mật khẩu in ở cuối log của lệnh `up`) |
+| Node app | http://localhost:30000 |
+| Java app | http://localhost:30080/api/report |
+
+Nếu máy có sẵn `kubectl`, có thể dùng trực tiếp kubeconfig mà lệnh `up` xuất ra: `export KUBECONFIG=$PWD/k8s/.kube/config`.
+
+### Cấu trúc thư mục
+
+| Đường dẫn | Nội dung |
+|---|---|
+| `k8s/bootstrap/` | Image công cụ (kind v0.27, kubectl v1.32, docker CLI) và script [kind.sh](k8s/bootstrap/kind.sh) |
+| `k8s/kind/cluster.yaml` | Cluster 1 node, map các NodePort ra host |
+| [`../githubactions_gitops`](https://github.com/kahnpott9r/githubactions_gitops) | **Repo riêng**: manifest 2 app (`apps/*`) và ArgoCD Application (`argocd/`). Được mount vào container `kind` |
+
+### Luồng GitOps
+
+```
+push code ──▶ GitHub Actions ──▶ image ghcr.io/...:sha-<commit>
+                    └─ job update-gitops ──▶ commit newTag vào githubactions_gitops
+                                               └─▶ ArgoCD (trong kind) tự sync ──▶ cluster
+```
+
+Cần clone repo `githubactions_gitops` cạnh repo này (`../githubactions_gitops`). Mặc định, lệnh `up` **build image từ source local, gắn đúng tag đang khai báo trong `githubactions_gitops/apps/*/kustomization.yaml`, rồi `kind load`** vào cluster (`BUILD_LOCAL_IMAGES=true`), và **apply manifest ngay** (`APPLY_APPS_NOW=true`). Nhờ vậy app chạy được kể cả khi repo chưa push lên GitHub hoặc GHCR chưa có image.
+
+ArgoCD chỉ sync được khi repo `githubactions_gitops` đã có trên GitHub và đọc được:
+- **Repo public:** không cần làm gì thêm.
+- **Repo private:** thêm repo vào ArgoCD (Settings → Repositories) bằng fine-grained PAT chỉ có quyền Contents: Read-only.
+
+Image trên GHCR mặc định là private. Hoặc chuyển package sang public, hoặc tạo `imagePullSecret`.
+
+Các biến môi trường (đặt trong `k8s/.env`): `CLUSTER_NAME`, `ARGOCD_VERSION`, `ARGOCD_REPO_URL`, `ARGOCD_REVISION`, `BUILD_LOCAL_IMAGES`, `APPLY_APPS_NOW`.
 
 ## Test
 

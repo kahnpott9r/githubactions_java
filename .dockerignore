@@ -8,3 +8,4 @@ target
 .DS_Store
 docker-compose.yml
 README.md
+k8s

@@ -1,0 +1,32 @@
+# Cluster Kubernetes local (kind) + ArgoCD, chạy hoàn toàn bằng Docker.
+# Không cần cài kind / kubectl / helm lên máy.
+#
+#   docker compose -f k8s/docker-compose.yml up --build      # tạo cluster + ArgoCD + deploy app
+#   docker compose -f k8s/docker-compose.yml run --rm kind status
+#   docker compose -f k8s/docker-compose.yml run --rm kind kubectl get pods -A
+#   docker compose -f k8s/docker-compose.yml run --rm kind down   # xoá cluster
+#
+# Sau khi chạy xong:
+#   ArgoCD UI : https://localhost:8443  (admin / mật khẩu in ra cuối log)
+#   Node app  : http://localhost:30000
+#   Java app  : http://localhost:30080/api/report
+services:
+  kind:
+    build: ./bootstrap
+    image: todo-kind-tools:local
+    # Dùng Docker của máy host: các node kind là container trên host.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ..:/src/githubactions_java:ro         # repo này (manifest + source Java)
+      - ../../githubactions:/src/githubactions:ro  # repo Node (để build image)
+      - ../../githubactions_gitops:/src/githubactions_gitops:ro  # repo GitOps (manifest + ArgoCD app)
+      - ./.kube:/work/.kube                    # kubeconfig xuất ra cho máy host
+    environment:
+      CLUSTER_NAME: ${CLUSTER_NAME:-todo}
+      ARGOCD_VERSION: ${ARGOCD_VERSION:-v3.1.8}
+      ARGOCD_REPO_URL: ${ARGOCD_REPO_URL:-https://github.com/kahnpott9r/githubactions_gitops.git}
+      ARGOCD_REVISION: ${ARGOCD_REVISION:-main}
+      BUILD_LOCAL_IMAGES: ${BUILD_LOCAL_IMAGES:-true}
+      APPLY_APPS_NOW: ${APPLY_APPS_NOW:-true}
+    command: ["up"]
+    restart: "no"
