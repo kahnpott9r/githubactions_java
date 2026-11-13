@@ -1,5 +1,6 @@
 # ---------- Stage 1: build ----------
-FROM eclipse-temurin:21-jdk-alpine AS build
+# Chạy native trên máy build (không qua QEMU): jar không phụ thuộc kiến trúc CPU
+FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk-alpine AS build
 
 WORKDIR /workspace
 
