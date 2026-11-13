@@ -79,10 +79,25 @@ Integration test đóng vai trò **contract test**: nếu repo Node thay đổi 
 ## Pipeline CI ([.github/workflows/ci.yml](.github/workflows/ci.yml))
 
 ```
-unit-test ──▶ integration-test ──▶ build (jar + docker image)
-                  │
+unit-test ──▶ integration-test ──┬──▶ build  (jar artifact)
+                  │              └──▶ docker (build image → push ghcr.io khi push vào main)
                   └─ checkout repo githubactions → npm start → chờ /api/health → ./mvnw -Pintegration verify
 ```
+
+### Docker image trên GHCR
+
+| Sự kiện | Hành động |
+|---|---|
+| `push` vào `main` | Build và **push** `ghcr.io/kahnpott9r/githubactions_java` với tag `latest`, `sha-<short>`, `main` |
+| Pull Request, `repository_dispatch`, `workflow_dispatch` | Chỉ build để kiểm tra Dockerfile, **không push** |
+
+Đăng nhập GHCR bằng `GITHUB_TOKEN`, với quyền `packages: write` chỉ cấp cho job `docker`, nên không cần secret riêng. Repo Node `githubactions` có job tương tự, push lên `ghcr.io/kahnpott9r/githubactions`.
+
+```bash
+docker pull ghcr.io/kahnpott9r/githubactions_java:latest
+```
+
+> Lần push đầu tiên, package mặc định là **private**. Muốn ai cũng pull được thì vào GitHub → Packages → package → Package settings → Change visibility.
 
 Pipeline được kích hoạt khi:
 - Có `push` hoặc `pull_request` vào `main` của repo này.
