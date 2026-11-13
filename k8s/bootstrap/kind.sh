@@ -12,6 +12,8 @@ CLUSTER_NAME="${CLUSTER_NAME:-todo}"
 ARGOCD_VERSION="${ARGOCD_VERSION:-v3.1.8}"
 ARGOCD_REPO_URL="${ARGOCD_REPO_URL:-https://github.com/kahnpott9r/githubactions_gitops.git}"
 ARGOCD_REVISION="${ARGOCD_REVISION:-main}"
+# Chu kỳ ArgoCD kiểm tra repo gitops để tự sync commit mới
+ARGOCD_POLL_INTERVAL="${ARGOCD_POLL_INTERVAL:-30s}"
 # true: build image 2 app từ source local và load vào kind (không cần GHCR)
 BUILD_LOCAL_IMAGES="${BUILD_LOCAL_IMAGES:-true}"
 # true: kubectl apply manifest app ngay, không chờ ArgoCD đọc được repo trên GitHub
@@ -66,6 +68,12 @@ install_argocd() {
   # Mở ArgoCD UI qua NodePort 30443 (-> https://localhost:8443 trên host)
   kubectl -n argocd patch svc argocd-server --type merge -p \
     '{"spec":{"type":"NodePort","ports":[{"name":"http","port":80,"targetPort":8080,"nodePort":30081},{"name":"https","port":443,"targetPort":8080,"nodePort":30443}]}}' >/dev/null
+
+  # Poll repo gitops mỗi ARGOCD_POLL_INTERVAL (mặc định ArgoCD: 120s + jitter 60s).
+  # Cluster local nên GitHub webhook không gọi vào được -> rút ngắn polling.
+  kubectl -n argocd patch cm argocd-cm --type merge -p \
+    "{\"data\":{\"timeout.reconciliation\":\"${ARGOCD_POLL_INTERVAL}\",\"timeout.reconciliation.jitter\":\"0s\"}}" >/dev/null
+  kubectl -n argocd rollout restart deploy/argocd-repo-server statefulset/argocd-application-controller >/dev/null
 
   log "Chờ ArgoCD sẵn sàng"
   kubectl -n argocd rollout status deploy/argocd-server --timeout=300s

@@ -26,6 +26,7 @@ services:
       ARGOCD_VERSION: ${ARGOCD_VERSION:-v3.1.8}
       ARGOCD_REPO_URL: ${ARGOCD_REPO_URL:-https://github.com/kahnpott9r/githubactions_gitops.git}
       ARGOCD_REVISION: ${ARGOCD_REVISION:-main}
+      ARGOCD_POLL_INTERVAL: ${ARGOCD_POLL_INTERVAL:-30s}
       BUILD_LOCAL_IMAGES: ${BUILD_LOCAL_IMAGES:-true}
       APPLY_APPS_NOW: ${APPLY_APPS_NOW:-true}
     command: ["up"]
