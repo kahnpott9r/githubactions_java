@@ -33,11 +33,41 @@ NODE_API_BASE_URL=http://localhost:3000 ./mvnw spring-boot:run
 curl http://localhost:8080/api/report
 ```
 
-Chạy cả 2 bằng Docker:
+### Chạy toàn bộ bằng Docker Compose
 
 ```bash
-docker compose up --build
+docker compose up --build -d
 ```
+
+| Service | URL trên host | Ghi chú |
+|---|---|---|
+| `node-app` | http://localhost:3000 | Build từ `../githubactions` |
+| `java-app` | http://localhost:8080/api/report | |
+| `localstack` | http://localhost:4566 | Health: `/_localstack/health` |
+| `ministack` | http://localhost:4567 | Health: `/_ministack/health` |
+| `aws-init` | – | Chạy một lần rồi thoát: tạo tài nguyên trên **cả 2** emulator |
+
+`aws-init` chạy [infra/aws/init.sh](infra/aws/init.sh) để tạo các tài nguyên sau. Script idempotent, chạy lại nhiều lần không lỗi:
+
+| Loại | Tên |
+|---|---|
+| S3 bucket | `todo-reports` |
+| SQS queue | `todo-events` |
+| DynamoDB table | `todo-report-history` (khóa `id`) |
+
+Thử gọi tới emulator (credentials giả là `test` / `test`, region `us-east-1`):
+
+```bash
+export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1
+aws --endpoint-url http://localhost:4566 s3 ls   # LocalStack
+aws --endpoint-url http://localhost:4567 s3 ls   # MiniStack
+```
+
+Chỉ chạy AWS emulator: `docker compose up -d localstack ministack aws-init`
+
+**Cấu hình:** copy `.env.example` thành `.env` để đổi port hoặc image.
+- **LocalStack:** từ năm 2026, image `localstack/localstack:latest` **bắt buộc** `LOCALSTACK_AUTH_TOKEN`, không có token thì container tự thoát. Vì vậy compose mặc định pin `localstack/localstack:4.14`, là bản community chạy được không cần token. Muốn dùng bản mới thì đặt `LOCALSTACK_IMAGE` và `LOCALSTACK_AUTH_TOKEN` trong `.env`.
+- **Trùng port:** `../docker-compose.yml` ở thư mục cha cũng chạy ministack ở port 4566. Nếu chạy song song 2 stack thì cần đổi `LOCALSTACK_PORT` / `MINISTACK_PORT`.
 
 ## Test
 
