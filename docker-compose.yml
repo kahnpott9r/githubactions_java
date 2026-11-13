@@ -65,6 +65,11 @@ services:
     environment:
       <<: *aws-env
       AWS_ENDPOINT_URL: http://ministack:4566
+      # Mặc định StackPort quét ~35 service với 10 luồng, cache 5s
+      # -> trang chủ "loading" ~50s mỗi lần tải. Chỉ quét service cần dùng.
+      STACKPORT_SERVICES: ${STACKPORT_SERVICES:-s3,sqs,sns,dynamodb,lambda,iam,logs,ssm,secretsmanager,events}
+      STACKPORT_PROBE_WORKERS: "16"
+      STACKPORT_CACHE_TTL: "30"
     depends_on:
       ministack:
         condition: service_healthy
