@@ -43,9 +43,9 @@ docker compose up --build -d
 |---|---|---|
 | `node-app` | http://localhost:3000 | Build từ `../githubactions` |
 | `java-app` | http://localhost:8080/api/report | |
-| `localstack` | http://localhost:4566 | Health: `/_localstack/health` |
-| `ministack` | http://localhost:4567 | Health: `/_ministack/health` |
-| `aws-init` | – | Chạy một lần rồi thoát: tạo tài nguyên trên **cả 2** emulator |
+| `ministack` | http://localhost:4567 | AWS emulator (S3, SQS, DynamoDB, ...). Health: `/_ministack/health` |
+| `stackport` | **http://localhost:8090** | **UI web** để xem tài nguyên AWS trên MiniStack |
+| `aws-init` | – | Chạy một lần rồi thoát, tạo tài nguyên trên MiniStack |
 
 `aws-init` chạy [infra/aws/init.sh](infra/aws/init.sh) để tạo các tài nguyên sau. Script idempotent, chạy lại nhiều lần không lỗi:
 
@@ -55,19 +55,17 @@ docker compose up --build -d
 | SQS queue | `todo-events` |
 | DynamoDB table | `todo-report-history` (khóa `id`) |
 
-Thử gọi tới emulator (credentials giả là `test` / `test`, region `us-east-1`):
+Có 2 cách xem tài nguyên:
+- **Bằng UI:** mở http://localhost:8090 (StackPort).
+- **Bằng CLI** (credentials giả là `test` / `test`, region `us-east-1`):
+  ```bash
+  export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1
+  aws --endpoint-url http://localhost:4567 s3 ls
+  ```
 
-```bash
-export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1
-aws --endpoint-url http://localhost:4566 s3 ls   # LocalStack
-aws --endpoint-url http://localhost:4567 s3 ls   # MiniStack
-```
+Chỉ chạy phần AWS: `docker compose up -d ministack aws-init stackport`
 
-Chỉ chạy AWS emulator: `docker compose up -d localstack ministack aws-init`
-
-**Cấu hình:** copy `.env.example` thành `.env` để đổi port hoặc image.
-- **LocalStack:** từ năm 2026, image `localstack/localstack:latest` **bắt buộc** `LOCALSTACK_AUTH_TOKEN`, không có token thì container tự thoát. Vì vậy compose mặc định pin `localstack/localstack:4.14`, là bản community chạy được không cần token. Muốn dùng bản mới thì đặt `LOCALSTACK_IMAGE` và `LOCALSTACK_AUTH_TOKEN` trong `.env`.
-- **Trùng port:** `../docker-compose.yml` ở thư mục cha cũng chạy ministack ở port 4566. Nếu chạy song song 2 stack thì cần đổi `LOCALSTACK_PORT` / `MINISTACK_PORT`.
+**Cấu hình:** copy `.env.example` thành `.env` để đổi port hoặc image. `../docker-compose.yml` ở thư mục cha dùng port 4566 (ministack) và 8089 (stackport), nên stack này mặc định dùng **4567 / 8090** để 2 stack chạy song song được.
 
 ## Test
 

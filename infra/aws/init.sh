@@ -1,5 +1,5 @@
 #!/bin/sh
-# Khởi tạo tài nguyên AWS giả lập trên cả LocalStack và MiniStack.
+# Khởi tạo tài nguyên AWS giả lập trên MiniStack.
 # Được chạy bởi service "aws-init" trong docker-compose.yml.
 set -eu
 
@@ -30,7 +30,6 @@ provision() {
   echo "    DynamoDB table  : $TABLE"
 }
 
-provision localstack "${LOCALSTACK_ENDPOINT:-http://localstack:4566}"
 provision ministack  "${MINISTACK_ENDPOINT:-http://ministack:4566}"
 
-echo "✅ Đã khởi tạo xong tài nguyên trên LocalStack và MiniStack."
+echo "✅ Đã khởi tạo xong tài nguyên trên MiniStack."

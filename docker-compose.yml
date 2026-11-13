@@ -1,17 +1,17 @@
-# Môi trường local đầy đủ: 2 app + 2 AWS emulator.
+# Môi trường local đầy đủ: 2 app + AWS emulator (MiniStack) + UI (StackPort).
 # Yêu cầu: repo githubactions nằm cạnh repo này (../githubactions).
 #
 #   docker compose up --build -d
 #   -> Node app   : http://localhost:3000
 #   -> Java app   : http://localhost:8080/api/report
-#   -> LocalStack : http://localhost:4566   (health: /_localstack/health)
-#   -> MiniStack  : http://localhost:4567   (health: /_ministack/health)
+#   -> MiniStack  : http://localhost:4567   (AWS API, health: /_ministack/health)
+#   -> StackPort  : http://localhost:8090   (UI xem tài nguyên AWS trên MiniStack)
 #
-# Chỉ chạy AWS emulator:  docker compose up -d localstack ministack aws-init
+# Chỉ chạy phần AWS:  docker compose up -d ministack aws-init stackport
 # Đổi port / image: copy .env.example thành .env
 #
-# Lưu ý: compose ở thư mục cha (../docker-compose.yml) cũng dùng port 4566 cho
-# ministack -> nếu chạy cả hai, đổi MINISTACK_PORT / LOCALSTACK_PORT trong .env.
+# Lưu ý: compose ở thư mục cha (../docker-compose.yml) dùng port 4566 (ministack)
+# và 8089 (stackport) -> stack này mặc định dùng 4567 / 8090 để chạy song song được.
 
 x-aws-env: &aws-env
   AWS_ACCESS_KEY_ID: test
@@ -44,22 +44,8 @@ services:
         condition: service_healthy
 
   # ---------------------------------------------------------------
-  # AWS emulators
+  # AWS: emulator (MiniStack) + UI (StackPort)
   # ---------------------------------------------------------------
-  localstack:
-    image: ${LOCALSTACK_IMAGE:-localstack/localstack:4.14}
-    ports:
-      - "${LOCALSTACK_PORT:-4566}:4566"
-    environment:
-      SERVICES: s3,sqs,dynamodb
-      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:-}
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-      start_period: 10s
-
   ministack:
     image: ${MINISTACK_IMAGE:-ministackorg/ministack:latest}
     ports:
@@ -71,19 +57,28 @@ services:
       retries: 20
       start_period: 5s
 
-  # Tạo S3 bucket, SQS queue, DynamoDB table trên cả 2 emulator rồi thoát.
+  # UI web để xem S3 / SQS / DynamoDB ... đang có trên MiniStack.
+  stackport:
+    image: ${STACKPORT_IMAGE:-davireis/stackport:latest}
+    ports:
+      - "${STACKPORT_PORT:-8090}:8080"
+    environment:
+      <<: *aws-env
+      AWS_ENDPOINT_URL: http://ministack:4566
+    depends_on:
+      ministack:
+        condition: service_healthy
+
+  # Tạo S3 bucket, SQS queue, DynamoDB table trên MiniStack rồi thoát.
   aws-init:
     image: amazon/aws-cli:2.27.0
     entrypoint: ["sh", "/scripts/init.sh"]
     environment:
       <<: *aws-env
-      LOCALSTACK_ENDPOINT: http://localstack:4566
       MINISTACK_ENDPOINT: http://ministack:4566
     volumes:
       - ./infra/aws:/scripts:ro
     depends_on:
-      localstack:
-        condition: service_healthy
       ministack:
         condition: service_healthy
     restart: "no"
